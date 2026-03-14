@@ -3195,6 +3195,8 @@ fn collect_configured_channels(
                             wa.pair_phone.clone(),
                             wa.pair_code.clone(),
                             wa.allowed_numbers.clone(),
+                            wa.self_chat_only,
+                            wa.bot_name.clone(),
                         )),
                     });
                 } else {

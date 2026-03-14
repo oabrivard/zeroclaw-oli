@@ -58,6 +58,10 @@ pub struct WhatsAppWebChannel {
     pair_code: Option<String>,
     /// Allowed phone numbers (E.164 format) or "*" for all
     allowed_numbers: Vec<String>,
+    /// When true, only respond to messages in the user's own "Note to Self" chat
+    self_chat_only: bool,
+    /// Bot name to prefix outgoing messages with
+    bot_name: Option<String>,
     /// Bot handle for shutdown
     bot_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Client handle for sending messages and typing indicators
@@ -75,18 +79,24 @@ impl WhatsAppWebChannel {
     /// * `pair_phone` - Optional phone number for pair code linking (format: "15551234567")
     /// * `pair_code` - Optional custom pair code (leave empty for auto-generated)
     /// * `allowed_numbers` - Phone numbers allowed to interact (E.164 format) or "*" for all
+    /// * `self_chat_only` - When true, only respond to messages in the user's own chat
+    /// * `bot_name` - Optional bot name to prefix outgoing messages with
     #[cfg(feature = "whatsapp-web")]
     pub fn new(
         session_path: String,
         pair_phone: Option<String>,
         pair_code: Option<String>,
         allowed_numbers: Vec<String>,
+        self_chat_only: bool,
+        bot_name: Option<String>,
     ) -> Self {
         Self {
             session_path,
             pair_phone,
             pair_code,
             allowed_numbers,
+            self_chat_only,
+            bot_name,
             bot_handle: Arc::new(Mutex::new(None)),
             client: Arc::new(Mutex::new(None)),
             tx: Arc::new(Mutex::new(None)),
@@ -303,8 +313,12 @@ impl Channel for WhatsAppWebChannel {
         }
 
         let to = self.recipient_to_jid(&message.recipient)?;
+        let prefixed_content = match &self.bot_name {
+            Some(name) if !name.is_empty() => format!("[{name}] {}", message.content),
+            _ => message.content.clone(),
+        };
         let outgoing = wa_rs_proto::whatsapp::Message {
-            conversation: Some(message.content.clone()),
+            conversation: Some(prefixed_content),
             ..Default::default()
         };
 
@@ -377,6 +391,7 @@ impl Channel for WhatsAppWebChannel {
             // Build the bot
             let tx_clone = tx.clone();
             let allowed_numbers = self.allowed_numbers.clone();
+            let self_chat_only = self.self_chat_only;
             let logout_tx_clone = logout_tx.clone();
             let retry_count_clone = retry_count.clone();
             let session_revoked_clone = session_revoked.clone();
@@ -388,6 +403,7 @@ impl Channel for WhatsAppWebChannel {
                 .on_event(move |event, _client| {
                     let tx_inner = tx_clone.clone();
                     let allowed_numbers = allowed_numbers.clone();
+                    let self_chat_only = self_chat_only;
                     let logout_tx = logout_tx_clone.clone();
                     let retry_count = retry_count_clone.clone();
                     let session_revoked = session_revoked_clone.clone();
@@ -400,6 +416,17 @@ impl Channel for WhatsAppWebChannel {
                                 let sender_alt = info.source.sender_alt.clone();
                                 let sender = sender_jid.user().to_string();
                                 let chat = info.source.chat.to_string();
+
+                                // Self-chat-only filter: skip messages where chat != sender
+                                if self_chat_only {
+                                    let chat_user = info.source.chat.user();
+                                    if sender_jid.user() != chat_user {
+                                        tracing::debug!(
+                                            "WhatsApp Web: ignoring non-self-chat message (self_chat_only=true)"
+                                        );
+                                        return;
+                                    }
+                                }
 
                                 tracing::info!(
                                     "WhatsApp Web message received (sender_len={}, chat_len={}, text_len={})",
@@ -692,6 +719,8 @@ impl WhatsAppWebChannel {
         _pair_phone: Option<String>,
         _pair_code: Option<String>,
         _allowed_numbers: Vec<String>,
+        _self_chat_only: bool,
+        _bot_name: Option<String>,
     ) -> Self {
         Self { _private: () }
     }
@@ -750,6 +779,8 @@ mod tests {
             None,
             None,
             vec!["+1234567890".into()],
+            false,
+            None,
         )
     }
 
@@ -771,7 +802,14 @@ mod tests {
     #[test]
     #[cfg(feature = "whatsapp-web")]
     fn whatsapp_web_number_allowed_wildcard() {
-        let ch = WhatsAppWebChannel::new("/tmp/test.db".into(), None, None, vec!["*".into()]);
+        let ch = WhatsAppWebChannel::new(
+            "/tmp/test.db".into(),
+            None,
+            None,
+            vec!["*".into()],
+            false,
+            None,
+        );
         assert!(ch.is_number_allowed("+1234567890"));
         assert!(ch.is_number_allowed("+9999999999"));
     }
@@ -779,7 +817,7 @@ mod tests {
     #[test]
     #[cfg(feature = "whatsapp-web")]
     fn whatsapp_web_number_denied_empty() {
-        let ch = WhatsAppWebChannel::new("/tmp/test.db".into(), None, None, vec![]);
+        let ch = WhatsAppWebChannel::new("/tmp/test.db".into(), None, None, vec![], false, None);
         // Empty allowlist means "deny all" (matches channel-wide allowlist policy).
         assert!(!ch.is_number_allowed("+1234567890"));
     }

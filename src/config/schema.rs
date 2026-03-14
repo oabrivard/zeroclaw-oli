@@ -3505,6 +3505,14 @@ pub struct WhatsAppConfig {
     /// Allowed phone numbers (E.164 format: +1234567890) or "*" for all
     #[serde(default)]
     pub allowed_numbers: Vec<String>,
+    /// When true, only respond to messages in the user's own "Note to Self" chat.
+    /// Self-chat is detected by comparing sender JID == chat JID.
+    #[serde(default)]
+    pub self_chat_only: bool,
+    /// Bot name to prefix outgoing messages with (e.g. "ZeroClaw").
+    /// When set, all outgoing messages are prefixed with "[bot_name] ".
+    #[serde(default)]
+    pub bot_name: Option<String>,
 }
 
 impl ChannelConfig for WhatsAppConfig {
@@ -7077,6 +7085,8 @@ channel_id = "C123"
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["+1234567890".into(), "+9876543210".into()],
+            self_chat_only: false,
+            bot_name: None,
         };
         let json = serde_json::to_string(&wc).unwrap();
         let parsed: WhatsAppConfig = serde_json::from_str(&json).unwrap();
@@ -7097,6 +7107,8 @@ channel_id = "C123"
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["+1".into()],
+            self_chat_only: false,
+            bot_name: None,
         };
         let toml_str = toml::to_string(&wc).unwrap();
         let parsed: WhatsAppConfig = toml::from_str(&toml_str).unwrap();
@@ -7122,6 +7134,8 @@ channel_id = "C123"
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["*".into()],
+            self_chat_only: false,
+            bot_name: None,
         };
         let toml_str = toml::to_string(&wc).unwrap();
         let parsed: WhatsAppConfig = toml::from_str(&toml_str).unwrap();
@@ -7139,6 +7153,8 @@ channel_id = "C123"
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["+1".into()],
+            self_chat_only: false,
+            bot_name: None,
         };
         assert!(wc.is_ambiguous_config());
         assert_eq!(wc.backend_type(), "cloud");
@@ -7155,6 +7171,8 @@ channel_id = "C123"
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec![],
+            self_chat_only: false,
+            bot_name: None,
         };
         assert!(!wc.is_ambiguous_config());
         assert_eq!(wc.backend_type(), "web");
@@ -7181,6 +7199,8 @@ channel_id = "C123"
                 pair_phone: None,
                 pair_code: None,
                 allowed_numbers: vec!["+1".into()],
+                self_chat_only: false,
+                bot_name: None,
             }),
             linq: None,
             wati: None,
